@@ -3,24 +3,16 @@
 ###################
 # In this step we copy over everything we need and install all dependancies
 # We stop at the end of this step in development, so it also includes the deploy command
-# We install jest, eslint and ts-node so we can run tests and lint.
 
 FROM node:21.4.0-alpine AS development
 
 ENV NODE_ENV=development
-RUN date
 
 # Create app directory
 WORKDIR /usr/src/app
 
 # This is necessary to run canvas in the docker container
 RUN npm install @napi-rs/canvas-linux-x64-musl
-
-# RUN if [ $NODE_ENV != "production" ] ; then npm install -g --save-dev jest ts-node eslint pm2; fi
-RUN npm install -g --save-dev jest ts-node eslint pm2
-
-# We need to copy the assets over so that the bot can use it
-COPY --chown=node:node ./assets ./build/assets
 
 # Do all of the above first so that the layers can run faster next time
 
@@ -33,24 +25,16 @@ COPY --chown=node:node package*.json ./
 # Use NPM CI even though this may be your first time, cuz package-lock already thinks you installed stuff
 RUN npm ci
 
+# We need to copy the assets over so that the bot can use it
+COPY --chown=node:node ./assets ./build/assets
+
 # Bundle app source
 COPY --chown=node:node . .
 
-# RUN npx prisma migrate deploy
-
-# Generate prisma client
-# This needs to happen before the next command for some reason
-RUN npx prisma generate
-RUN npx prisma generate --schema=./src/prisma/moodle/schema.prisma
-
-# Deploy the commands
-# RUN npx ts-node --transpile-only ./src/discord/utils/commandDeploy.ts
-
-# CMD npx prisma migrate deploy && npx tsc-watch --onSuccess "node ./build/src/start.js"
-CMD npx tsc-watch --onSuccess "node ./build/src/start.js"
+USER node
 
 # For container development, the following command runs forever, so we can inspect the container
-# CMD tail -f /dev/null
+CMD ["tail", "-f", "/dev/null"]
 
 ###################
 # BUILD FOR PRODUCTION
