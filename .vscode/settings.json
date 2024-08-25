@@ -23,7 +23,7 @@
     // ".devcontainer": true,
     ".github": true,
     ".vscode": false,
-    "node_modules": true,
+    // "node_modules": true,
     // ".dockerignore": true,
     // ".drone.yml": true,
     // ".eslintignore": true,

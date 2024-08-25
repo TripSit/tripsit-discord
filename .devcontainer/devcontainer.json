@@ -3,8 +3,9 @@
 {
 	"name": "TripBot Dev",
 	"build": {
-		"dockerfile": "../src/docker/docker-compose.yml"
+		"dockerfile": "../docker-compose.yml"
 	},
+	"workspaceFolder": "/workspaces/tripbot",
 	// Configure tool-specific properties.
 	"customizations": {
 		"codespaces": {

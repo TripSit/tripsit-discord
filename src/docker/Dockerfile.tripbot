@@ -4,17 +4,21 @@
 # In this step we copy over everything we need and install all dependancies
 # We stop at the end of this step in development, so it also includes the deploy command
 
-FROM node:21.4.0-alpine AS development
+FROM node:22 AS development
 
 ENV NODE_ENV=development
 
-# Create app directory
-WORKDIR /usr/src/app
+# Update the package list and install the necessary dependencies
+RUN apt-get update && apt-get upgrade -y
 
-# This is necessary to run canvas in the docker container
-RUN npm install @napi-rs/canvas-linux-x64-musl
+# Create app directory
+WORKDIR /workspaces/tripbot
+
+# Change ownership of the workspaces directory to the node user
+RUN chown -R node:node /workspaces/
 
 # Do all of the above first so that the layers can run faster next time
+USER node
 
 # Copy application dependency manifests to the container image.
 # A wildcard is used to ensure copying both package.json AND package-lock.json (when available).
@@ -23,15 +27,14 @@ COPY --chown=node:node package*.json ./
 
 # Install app dependencies using the `npm ci` command instead of `npm install`
 # Use NPM CI even though this may be your first time, cuz package-lock already thinks you installed stuff
-RUN npm ci
+RUN npm install --silent
 
-# We need to copy the assets over so that the bot can use it
-COPY --chown=node:node ./assets ./build/assets
+# Move the node_modules directory to the /workspaces directory
+RUN mv node_modules ../
 
 # Bundle app source
 COPY --chown=node:node . .
-
-USER node
+COPY --chown=node:node ./assets ./build/assets
 
 # For container development, the following command runs forever, so we can inspect the container
 CMD ["tail", "-f", "/dev/null"]
@@ -45,25 +48,14 @@ CMD ["tail", "-f", "/dev/null"]
 # We run the build command which creates the production bundle
 # We run npm ci --only=production to ensure that only the production dependencies are installed
 
-FROM node:21.4.0-alpine AS build
+FROM node:22 AS build
 
 ENV NODE_ENV=production
-RUN date
 
-WORKDIR /usr/src/app
-
-# Run the build command which creates the production bundle
-# This comes before the next command cuz ts is a dev requirement and we don't want it in the production image
-RUN npm install -g --save-dev typescript
-
-# This is necessary to run canvas in the docker container
-RUN npm install @napi-rs/canvas-linux-x64-musl
-
-# In order to run `npm run build` we need access to the Nest CLI which is a dev dependency. In the previous development stage we ran `npm ci` which installed all dependencies, so we can copy over the node_modules directory from the development image
-COPY --chown=node:node --from=development /usr/src/app/node_modules ./node_modules
+WORKDIR /workspaces/tripbot
 
 # Copy over the existing source code
-COPY --chown=node:node . .
+COPY --chown=node:node --from=development . .
 
 # Build the code
 RUN tsc
@@ -71,10 +63,7 @@ RUN tsc
 # Running `npm ci` removes the existing node_modules directory and passing in --only=production ensures that only the production dependencies are installed. This ensures that the node_modules directory is as optimized as possible
 RUN npm ci --omit:dev && npm cache clean --force
 
-# USER node
-
-# For container development, the following command runs forever, so we can inspect the container
-# CMD tail -f /dev/null
+# At this point we have a build folder and a production node_modules folder
 
 ###################
 # PRODUCTION
@@ -82,32 +71,20 @@ RUN npm ci --omit:dev && npm cache clean --force
 # This stage creates the final, small-as-can-be, production image
 # We copy over the node_modules directory from the build stage
 # Then we ONLY copy over the /build folder with the js files
-# We already deployed before, so the only thing left to do is run the bot with PM2
 
-FROM node:21.4.0-alpine AS production
+# Use the alpine image for the smallest possible image
+FROM node:22-alpine AS production
 
 ENV NODE_ENV=production
-RUN date
 
-WORKDIR /usr/src/app
-
-# Install pm2
-RUN npm install pm2 -g
+WORKDIR /workspaces/tripbot
 
 # # Copy the bundled code from the build stage to the production image
-COPY --chown=node:node --from=build /usr/src/app/node_modules ./node_modules
-COPY --chown=node:node --from=build /usr/src/app/build ./build
+COPY --chown=node:node --from=build /workspaces/tripbot/node_modules ./node_modules
+COPY --chown=node:node --from=build /workspaces/tripbot/build ./build
   # This needs to be in the SRC folder because that's what package.json says
 COPY --chown=node:node ./src/prisma/ ./src/prisma
 COPY --chown=node:node ./assets ./build/assets
 COPY --chown=node:node package*.json ./
 
-# Generate prisma client
-RUN npx prisma generate
-RUN npx prisma generate --schema=./src/prisma/moodle/schema.prisma
-
 USER node
-
-# Start the bot using the production build
-# CMD npx prisma migrate deploy && pm2-runtime build/src/start.js
-CMD pm2-runtime build/src/start.js
